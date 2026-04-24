@@ -8,7 +8,7 @@
 
 Sounds better on every call — no knobs required.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Platform: macOS](https://img.shields.io/badge/Platform-macOS%2013%2B-black.svg?logo=apple)](https://www.apple.com/macos/)
 [![Architecture](https://img.shields.io/badge/Apple%20Silicon%20%2B%20Intel-supported-brightgreen.svg)](#)
 
@@ -187,4 +187,4 @@ Issues and pull requests are welcome. Please read [docs/CONTRIBUTING.md](docs/CO
 
 ## License
 
-[MIT](LICENSE) — use it, fork it, ship it.
+[Apache 2.0](LICENSE) — use it, fork it, ship it. Just give credit and note your changes.
