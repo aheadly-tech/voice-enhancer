@@ -1,0 +1,101 @@
+name: CI
+
+# Two jobs:
+#   * engine-linux    — fastest feedback loop. The C++ DSP is
+#                       platform-agnostic and builds on Linux in seconds.
+#                       Runs the unit tests. Covers 80% of the risk.
+#   * driver-macos    — macOS-only. Builds the HAL driver bundle and the
+#                       SwiftUI app. Slower (Xcode), gated so that Linux
+#                       failures short-circuit before we burn macOS minutes.
+#
+# We intentionally don't run the SwiftUI UI tests here — there's no good
+# way to run them headless on a CI runner, and a smoke build already
+# catches the compile-break regressions we care about.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine-linux:
+    name: Engine (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+
+      - name: Configure
+        working-directory: AudioEngine
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        working-directory: AudioEngine
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        working-directory: AudioEngine
+        run: ./build/voice_enhancer_tests
+
+  driver-macos:
+    name: Driver + App (macOS)
+    runs-on: macos-14
+    needs: engine-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        # Pin to a known-good Xcode to avoid drift when the runner image rolls.
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Show toolchain versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+          cmake --version
+
+      - name: Build AudioEngine
+        run: |
+          cmake -S AudioEngine -B AudioEngine/build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+          cmake --build AudioEngine/build --parallel
+          AudioEngine/build/voice_enhancer_tests
+
+      - name: Build VirtualDriver
+        run: |
+          cmake -S VirtualDriver -B VirtualDriver/build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+          cmake --build VirtualDriver/build --parallel
+
+      - name: Verify driver bundle layout
+        run: |
+          test -d VirtualDriver/build/VoiceEnhancer.driver
+          test -f VirtualDriver/build/VoiceEnhancer.driver/Contents/Info.plist
+          file VirtualDriver/build/VoiceEnhancer.driver/Contents/MacOS/VoiceEnhancer
+
+      - name: Build Swift app (package compile-check)
+        working-directory: VoiceEnhancerApp
+        # This builds with the stub engine path (no C++ engine linked).
+        # Its job is to keep the SwiftUI code honest — full .app bundle
+        # builds happen in an Xcode project that isn't checked in yet.
+        run: swift build -c release
+
+      - name: Upload driver artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceEnhancer.driver
+          path: VirtualDriver/build/VoiceEnhancer.driver
+          if-no-files-found: error

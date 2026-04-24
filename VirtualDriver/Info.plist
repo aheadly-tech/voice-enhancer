@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>VoiceEnhancer</string>
+    <key>CFBundleIdentifier</key>
+    <string>tech.aheadly.voice-enhancer.driver</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>VoiceEnhancer</string>
+    <key>CFBundlePackageType</key>
+    <string>BNDL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- Core Audio plugin discovery. `coreaudiod` looks for this key to
+         identify loadable plugins. The factory function named here is the
+         C entry point we export from Entry.cpp. -->
+    <key>CFPlugInFactories</key>
+    <dict>
+        <!-- This UUID uniquely identifies our plugin. Generated once with
+             `uuidgen` — do not regenerate, it is part of our device UID. -->
+        <key>4B9E5F8A-1F3E-4E2D-9F7C-2B6A1C3D4E5F</key>
+        <string>VoiceEnhancer_Create</string>
+    </dict>
+
+    <key>CFPlugInTypes</key>
+    <dict>
+        <!-- AudioServerPlugIn type UUID — DO NOT CHANGE. This is Apple's
+             well-known type identifier for HAL server plugins. -->
+        <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
+        <array>
+            <string>4B9E5F8A-1F3E-4E2D-9F7C-2B6A1C3D4E5F</string>
+        </array>
+    </dict>
+</dict>
+</plist>

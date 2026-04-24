@@ -1,0 +1,51 @@
+# Build outputs
+build/
+cmake-build-*/
+DerivedData/
+*.o
+*.a
+*.dylib
+*.driver
+!VirtualDriver/**/*.driver.in
+
+# Generated Xcode project (regenerate with `xcodegen generate`).
+VoiceEnhancerApp/VoiceEnhancer.xcodeproj/
+
+# Xcode
+*.xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcscheme
+!default.xcscheme
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Code signing / notarization artifacts
+*.cer
+*.p12
+*.provisionprofile
+*.entitlements.debug
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# Test artifacts
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+pass.txt

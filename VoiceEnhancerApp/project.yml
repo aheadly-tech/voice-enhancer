@@ -1,0 +1,115 @@
+# XcodeGen spec for the Voice Enhancer macOS app.
+#
+# Regenerate the .xcodeproj with:
+#     brew install xcodegen          # one-time, if missing
+#     cd VoiceEnhancerApp
+#     xcodegen generate
+#     open VoiceEnhancer.xcodeproj
+#
+# The project depends on AudioEngine having been built at least once so
+# that libvoice_enhancer.a exists on disk. scripts/build.sh handles that
+# automatically before invoking this spec.
+
+name: VoiceEnhancer
+options:
+  bundleIdPrefix: tech.aheadly
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  # Keep the generated project out of version control — it's derived.
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    DEAD_CODE_STRIPPING: YES
+    # Strict-concurrency warnings aren't failures on macOS 13 targets; we
+    # keep them as hints rather than errors so the build stays green on
+    # older Xcodes.
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  VoiceEnhancer:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+
+    sources:
+      - path: Sources
+        excludes:
+          # Info.plist is declared separately below; don't compile it.
+          - "Resources/Info.plist"
+          - "Resources/VoiceEnhancer.entitlements"
+          # The bridging header is wired via build setting, not as a source.
+          - "VoiceEnhancer-Bridging-Header.h"
+
+    info:
+      path: Sources/Resources/Info.plist
+      properties:
+        NSMicrophoneUsageDescription: "Voice Enhancer needs microphone access to capture and process your audio in real time."
+
+    entitlements:
+      path: Sources/Resources/VoiceEnhancer.entitlements
+
+    settings:
+      base:
+        ARCHS: arm64
+        VALID_ARCHS: arm64
+        PRODUCT_BUNDLE_IDENTIFIER: tech.aheadly.voice-enhancer
+        PRODUCT_NAME: "Voice Enhancer"
+
+        # Bridging header so Swift can see the C ABI declared in
+        # AudioEngine/bridge/engine_c_api.h. The file itself just
+        # #includes that header; it lives under Sources/.
+        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/Sources/VoiceEnhancer-Bridging-Header.h"
+
+        # Tell the Swift `#if canImport(VoiceEnhancerEngine)` path that the
+        # C engine IS linked. Without this flag the stub path kicks in and
+        # the app runs silent.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VoiceEnhancerEngine"
+
+        # Find the C header and the static library that scripts/build.sh
+        # produced in AudioEngine/build/.
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../AudioEngine/bridge"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../AudioEngine/build"
+        OTHER_LDFLAGS: "$(inherited) -lvoice_enhancer -lc++"
+
+        # HAL / AVFoundation / Core Audio frameworks that MicCapture and
+        # AudioDeviceEnumerator link against.
+        FRAMEWORK_SEARCH_PATHS: "$(inherited)"
+
+        # Code signing: default to automatic with your Developer ID team.
+        # Override with `xcodegen generate` + a project.yml override, or
+        # just flip it in Xcode's Signing & Capabilities tab.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: "Sources/Resources/VoiceEnhancer.entitlements"
+
+    dependencies:
+      - framework: CoreAudio.framework
+        embed: false
+      - framework: AudioToolbox.framework
+        embed: false
+      - framework: AVFoundation.framework
+        embed: false
+
+    preBuildScripts:
+      - name: Build AudioEngine (if missing)
+        # If libvoice_enhancer.a isn't on disk yet, build it. This keeps the
+        # "clone and hit ⌘R in Xcode" path working for new contributors who
+        # haven't run scripts/build.sh yet.
+        script: |
+          set -e
+          LIB="${SRCROOT}/../AudioEngine/build/libvoice_enhancer.a"
+          if [[ ! -f "$LIB" ]]; then
+              echo "note: building AudioEngine (first-run)"
+              cmake -S "${SRCROOT}/../AudioEngine" \
+                    -B "${SRCROOT}/../AudioEngine/build" \
+                    -DCMAKE_BUILD_TYPE=Release \
+                    -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+                    -DCMAKE_OSX_ARCHITECTURES=arm64 >/dev/null
+              cmake --build "${SRCROOT}/../AudioEngine/build" --parallel
+          fi
+        basedOnDependencyAnalysis: false

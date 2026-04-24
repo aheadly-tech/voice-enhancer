@@ -1,0 +1,8 @@
+// Clang module map for Swift. Import as `import VoiceEnhancerEngine` from
+// Swift. The Xcode target that links libvoice_enhancer.a points its
+// HEADER_SEARCH_PATHS at this directory and MODULEMAP_FILE at this file.
+
+module VoiceEnhancerEngine {
+    header "engine_c_api.h"
+    export *
+}
