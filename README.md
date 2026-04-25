@@ -16,6 +16,10 @@ Sounds better on every call — no knobs required.
 
 *Voice Enhancer captures your microphone, processes it through a professional DSP chain, and exposes the result as a virtual microphone. Zoom, Teams, Meet, Discord, OBS — any app — just selects "Voice Enhancer" as the mic.*
 
+<br>
+
+<img src="docs/screenshot.jpeg" width="700" alt="Voice Enhancer app screenshot">
+
 </div>
 
 <br>
