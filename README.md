@@ -303,6 +303,10 @@ Issues and pull requests are welcome. Please read [docs/CONTRIBUTING.md](docs/CO
 
 <br>
 
+## Privacy
+
+[Privacy Policy](PRIVACY.md) — Voice Enhancer runs 100% offline. No data collection, no telemetry, no network calls.
+
 ## License
 
 [Apache 2.0](LICENSE) — use it, fork it, ship it. Just give credit and note your changes.
