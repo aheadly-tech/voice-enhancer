@@ -121,6 +121,22 @@ Thin or harsh-sounding mics
 
 <br>
 
+## Hear the Difference
+
+Listen to the same voice clip processed through each preset:
+
+| | Preset | Listen |
+|:---:|:---|:---|
+| **Original** | Raw, unprocessed microphone | [original.mp3](docs/samples/original.mp3) |
+| **Natural** | Gentle cleanup, transparent | [natural.mp3](docs/samples/natural.mp3) |
+| **Broadcast** | Radio DJ voice, bold and clear | [broadcast.mp3](docs/samples/broadcast.mp3) |
+| **Clarity** | Presence boost, cuts through noise | [clarity.mp3](docs/samples/clarity.mp3) |
+| **Warm** | Adds body, softens harshness | [warm.mp3](docs/samples/warm.mp3) |
+
+> Click any link to download and listen. Each file is the same input processed through a different preset.
+
+<br>
+
 ---
 
 <br>
