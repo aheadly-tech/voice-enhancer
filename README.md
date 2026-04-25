@@ -121,6 +121,14 @@ Thin or harsh-sounding mics
 
 <br>
 
+## Hear the Difference
+
+Same voice, same mic — just a different preset. Listen for yourself:
+
+**[Listen on SoundCloud](https://soundcloud.com/aheadly-tech/sets/voice-enhander)** — Original (unprocessed) vs. Natural, Broadcast, Clarity, and Warm.
+
+<br>
+
 ---
 
 <br>
