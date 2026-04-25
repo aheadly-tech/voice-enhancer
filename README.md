@@ -20,7 +20,7 @@ A real-time voice processor for macOS that turns your microphone into a broadcas
 
 <br>
 
-<img src="docs/screenshot.jpeg" width="720" alt="Voice Enhancer app screenshot" style="border-radius: 12px;">
+<img src="docs/demo.gif" width="720" alt="Voice Enhancer demo" style="border-radius: 12px;">
 
 </div>
 
