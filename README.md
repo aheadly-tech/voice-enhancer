@@ -12,6 +12,7 @@
 [![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000.svg?style=for-the-badge&logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![Apple Silicon + Intel](https://img.shields.io/badge/Apple%20Silicon%20%2B%20Intel-supported-34C759.svg?style=for-the-badge)](#)
 [![Latency](https://img.shields.io/badge/Latency-~10ms-FF9F0A.svg?style=for-the-badge)](#performance)
+[![Hear the Difference](https://img.shields.io/badge/Hear%20the%20Difference-SoundCloud-FF5500.svg?style=for-the-badge&logo=soundcloud&logoColor=white)](https://soundcloud.com/aheadly-tech/sets/voice-enhander)
 
 <br>
 
