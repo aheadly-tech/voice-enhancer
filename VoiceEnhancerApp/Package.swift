@@ -26,7 +26,9 @@ let package = Package(
             exclude: [
                 "Resources/Info.plist",
                 "Resources/AppIcon.png",
-                "Resources/VoiceEnhancer.entitlements"
+                "Resources/VoiceEnhancer.entitlements",
+                "Audio/AVAudioTapInstaller.h",
+                "Audio/AVAudioTapInstaller.m"
             ],
             resources: [
                 .process("Resources/Assets.xcassets")

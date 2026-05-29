@@ -69,7 +69,7 @@ targets:
         # Tell the Swift `#if canImport(VoiceEnhancerEngine)` path that the
         # C engine IS linked. Without this flag the stub path kicks in and
         # the app runs silent.
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VoiceEnhancerEngine"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) VoiceEnhancerEngine VoiceEnhancerAppBundle"
 
         # Find the C header and the static library that scripts/build.sh
         # produced in AudioEngine/build/.
