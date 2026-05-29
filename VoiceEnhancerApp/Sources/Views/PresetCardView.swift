@@ -1,46 +1,44 @@
 import SwiftUI
 
-/// A single preset card: icon, name, short blurb.
+/// A compact preset card: icon and name.
 ///
 /// Selected state is shown with a colored ring. Un-selected state uses the
 /// standard material fill so the cards recede visually until focused. Hover
 /// and press animations are subtle — audio apps aren't games, and we don't
-/// want cards vying for attention.
+/// want cards vying for attention. The longer preset description is shown
+/// below the row by PresetPickerView.
 struct PresetCardView: View {
     let preset: Preset
     let isSelected: Bool
+    let language: AppLanguage
 
     @State private var isHovering = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Image(systemName: preset.systemImage)
-                .font(.system(size: 24, weight: .medium))
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                .frame(height: 28)
+                .frame(height: 24)
 
-            Text(preset.name)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(preset.name(language: language))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.primary)
-
-            Text(preset.blurb)
-                .font(.system(size: 10, weight: .regular))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 120)
-        .padding(.horizontal, 8)
+        .frame(height: 76)
+        .padding(.horizontal, 6)
         .background(background)
         .overlay(border)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
-        .accessibilityLabel(preset.name)
-        .accessibilityHint(preset.blurb)
+        .accessibilityLabel(preset.name(language: language))
+        .accessibilityHint(preset.blurb(language: language))
     }
 
     // MARK: - Styling
@@ -62,11 +60,13 @@ struct PresetCardView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     HStack {
-        PresetCardView(preset: .natural, isSelected: true)
-        PresetCardView(preset: .broadcast, isSelected: false)
+        PresetCardView(preset: .natural, isSelected: true, language: .english)
+        PresetCardView(preset: .broadcast, isSelected: false, language: .english)
     }
     .padding()
     .frame(width: 400)
 }
+#endif

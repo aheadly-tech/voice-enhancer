@@ -19,21 +19,28 @@ struct ContentView: View {
     @State private var showingSettings = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            HeaderView(showingSettings: $showingSettings)
+        ZStack(alignment: .topLeading) {
+            WindowBackground()
 
-            PresetPickerView()
+            VStack(spacing: 24) {
+                HeaderView(showingSettings: $showingSettings)
 
-            MetersView()
+                PresetPickerView()
 
-            Spacer(minLength: 0)
+                MetersView()
 
-            DriverStatusFooter()
+                Spacer(minLength: 0)
+
+                DriverStatusFooter()
+            }
+            .padding(.top, 52)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(24)
-        .background(WindowBackground())
         .sheet(isPresented: $showingSettings) {
             SettingsView()
+                .environment(\.layoutDirection, audio.appLanguage.layoutDirection)
                 .frame(minWidth: 460, minHeight: 520)
         }
     }
@@ -48,9 +55,9 @@ private struct HeaderView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Voice Enhancer")
+                Text(audio.t(.appName))
                     .font(.system(size: 22, weight: .semibold, design: .rounded))
-                StatusPill(status: audio.status)
+                StatusPill(status: audio.status, language: audio.appLanguage)
             }
 
             Spacer()
@@ -65,25 +72,26 @@ private struct HeaderView: View {
                     .padding(6)
             }
             .buttonStyle(.borderless)
-            .help("Settings")
+            .help(audio.t(.settings))
 
             Toggle("", isOn: $audio.isEnabled)
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .help(audio.isEnabled ? "Enhancement on" : "Enhancement bypassed")
+                .help(audio.isEnabled ? audio.t(.enhancementOn) : audio.t(.enhancementBypassed))
         }
     }
 }
 
 private struct StatusPill: View {
     let status: AudioViewModel.Status
+    let language: AppLanguage
 
     var body: some View {
         HStack(spacing: 6) {
             Circle()
                 .fill(color)
                 .frame(width: 6, height: 6)
-            Text(status.displayText)
+            Text(status.displayText(language: language))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -118,7 +126,7 @@ private struct DriverStatusFooter: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(.system(size: 11))
-                    Text("Virtual driver not installed. Run scripts/install.sh to route audio to other apps.")
+                    Text(audio.t(.virtualDriverMissingFooter))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -154,7 +162,9 @@ private struct WindowBackground: View {
     }
 }
 
+#if DEBUG
 #Preview {
     ContentView()
         .environmentObject(AudioViewModel())
 }
+#endif

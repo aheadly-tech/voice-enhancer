@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 import Combine
 import CoreAudio
+import AppKit
+import ServiceManagement
 import os
 
 /// Main view model for the app.
@@ -26,9 +28,8 @@ final class AudioViewModel: ObservableObject {
     @Published var selectedPreset: Preset = .natural {
         didSet {
             guard oldValue != selectedPreset else { return }
-            bridge.setPreset(selectedPreset)
-            compThresholdDb = selectedPreset.defaultCompThresholdDb
-            deesserThresholdDb = selectedPreset.defaultDeesserThresholdDb
+            UserDefaults.standard.set(selectedPreset.rawValue, forKey: Self.presetDefaultsKey)
+            applySelectedPreset()
         }
     }
 
@@ -37,6 +38,8 @@ final class AudioViewModel: ObservableObject {
         didSet {
             bridge.setCompThresholdDb(compThresholdDb)
             preview.setCompThresholdDb(compThresholdDb)
+            UserDefaults.standard.set(compThresholdDb, forKey: Self.compThresholdDefaultsKey)
+            persistManualTuningIfNeeded()
         }
     }
 
@@ -45,21 +48,47 @@ final class AudioViewModel: ObservableObject {
         didSet {
             bridge.setDeesserThresholdDb(deesserThresholdDb)
             preview.setDeesserThresholdDb(deesserThresholdDb)
+            UserDefaults.standard.set(deesserThresholdDb, forKey: Self.deesserThresholdDefaultsKey)
+            persistManualTuningIfNeeded()
         }
     }
 
     /// Voice preview state for the Settings UI.
     @Published private(set) var previewState: VoicePreview.State = .idle
 
+    /// User-selected app language. Applied immediately to SwiftUI views and
+    /// persisted locally so the app opens in the same language next time.
+    @Published var appLanguage: AppLanguage = .preferred() {
+        didSet {
+            guard oldValue != appLanguage else { return }
+            UserDefaults.standard.set(appLanguage.rawValue, forKey: Self.appLanguageDefaultsKey)
+        }
+    }
+
     /// Global enhancement toggle. When false, the engine is bypassed.
     @Published var isEnabled: Bool = true {
         didSet {
             bridge.setBypass(!isEnabled)
+            UserDefaults.standard.set(isEnabled, forKey: Self.processingEnabledDefaultsKey)
         }
     }
 
+    /// Mirrors the macOS Login Items registration for the main app.
+    @Published var launchAtLogin: Bool = false {
+        didSet {
+            guard oldValue != launchAtLogin, !isSyncingLaunchAtLogin else { return }
+            setLaunchAtLogin(launchAtLogin)
+        }
+    }
+
+    @Published private(set) var launchAtLoginError: String?
+
     /// Human-readable status string shown in the toolbar.
-    @Published private(set) var status: Status = .idle
+    @Published private(set) var status: Status = .idle {
+        didSet {
+            Self.updateDockBadge(for: status)
+        }
+    }
 
     /// Whether the shared-memory ring to the HAL driver is open. False when
     /// the driver bundle isn't installed (or the OS denied the mapping) —
@@ -77,13 +106,24 @@ final class AudioViewModel: ObservableObject {
     @Published var selectedInputUID: String? {
         didSet {
             guard oldValue != selectedInputUID else { return }
-            UserDefaults.standard.set(selectedInputUID, forKey: Self.inputUIDDefaultsKey)
+            if let selectedInputUID {
+                UserDefaults.standard.set(selectedInputUID, forKey: Self.inputUIDDefaultsKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.inputUIDDefaultsKey)
+            }
             // Hot-swap: restart the capture graph with the new device.
-            Task { await restartCaptureIfRunning() }
+            Task { await scheduleReconnect(reason: "input device changed", delaySeconds: 0.2) }
         }
     }
 
     private static let inputUIDDefaultsKey = "tech.aheadly.voice-enhancer.inputUID"
+    private static let presetDefaultsKey = "tech.aheadly.voice-enhancer.preset"
+    private static let compThresholdDefaultsKey = "tech.aheadly.voice-enhancer.compThresholdDb"
+    private static let deesserThresholdDefaultsKey = "tech.aheadly.voice-enhancer.deesserThresholdDb"
+    private static let customCompThresholdDefaultsKey = "tech.aheadly.voice-enhancer.customCompThresholdDb"
+    private static let customDeesserThresholdDefaultsKey = "tech.aheadly.voice-enhancer.customDeesserThresholdDb"
+    private static let processingEnabledDefaultsKey = "tech.aheadly.voice-enhancer.processingEnabled"
+    private static let appLanguageDefaultsKey = "tech.aheadly.voice-enhancer.appLanguage"
 
     // Meter values, updated at 60 Hz from `startMeterPolling()` through the
     // peak-hold smoother in `pollMeters()`. Peak meters are in [0, 1] linear
@@ -101,12 +141,19 @@ final class AudioViewModel: ObservableObject {
     private let capture: MicCapture
     private let preview = VoicePreview()
     private var meterTimer: Timer?
-    private var configurationRestartTask: Task<Void, Never>?
-    private var configurationStabilityTask: Task<Void, Never>?
+    private var reconnectTask: Task<Void, Never>?
     private var desiredRunningState = false
-    private var configurationRestartAttempts = 0
+    private var isReconnecting = false
+    private var isApplyingPresetSelection = false
+    private var isPromotingManualTuningToCustom = false
+    private var isSyncingLaunchAtLogin = false
+    private var wakeObserver: NSObjectProtocol?
 
-    private static let maxConfigurationRestartAttempts = 3
+    private static let reconnectBackoffSeconds: [UInt64] = [
+        1_000_000_000,
+        2_000_000_000,
+        5_000_000_000
+    ]
 
     // MARK: - Init
 
@@ -124,7 +171,29 @@ final class AudioViewModel: ObservableObject {
         }
         self.inputDevices = AudioDeviceEnumerator.listInputDevices()
         self.driverAvailable = AudioDeviceEnumerator.hasVoiceEnhancerDriver() || ring.isOpen
-        self.selectedInputUID = UserDefaults.standard.string(forKey: Self.inputUIDDefaultsKey)
+        self.selectedInputUID = Self.loadSelectedInputUID()
+        let loadedPreset = Self.loadPreset()
+        self.selectedPreset = loadedPreset
+        self.compThresholdDb = Self.loadFloat(
+            forKey: loadedPreset == .custom ? Self.customCompThresholdDefaultsKey : Self.compThresholdDefaultsKey,
+            defaultValue: loadedPreset.defaultCompThresholdDb
+        )
+        self.deesserThresholdDb = Self.loadFloat(
+            forKey: loadedPreset == .custom ? Self.customDeesserThresholdDefaultsKey : Self.deesserThresholdDefaultsKey,
+            defaultValue: loadedPreset.defaultDeesserThresholdDb
+        )
+        self.appLanguage = Self.loadAppLanguage()
+        self.isEnabled = Self.loadBool(forKey: Self.processingEnabledDefaultsKey, defaultValue: true)
+        self.isSyncingLaunchAtLogin = true
+        self.launchAtLogin = Self.isLaunchAtLoginEnabled()
+        self.isSyncingLaunchAtLogin = false
+
+        bridge.setPreset(selectedPreset)
+        bridge.setCompThresholdDb(compThresholdDb)
+        preview.setCompThresholdDb(compThresholdDb)
+        bridge.setDeesserThresholdDb(deesserThresholdDb)
+        preview.setDeesserThresholdDb(deesserThresholdDb)
+        bridge.setBypass(!isEnabled)
 
         // Wire preview: tap raw audio from capture, publish state changes.
         let prev = self.preview
@@ -136,53 +205,77 @@ final class AudioViewModel: ObservableObject {
                 self?.previewState = state
             }
         }
+
+        self.wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                await self?.scheduleReconnect(reason: "system woke from sleep", delaySeconds: 3.0)
+            }
+        }
+    }
+
+    deinit {
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+        }
     }
 
     // MARK: - Lifecycle
 
     func start() async {
 
+        if desiredRunningState, status == .running {
+            return
+        }
         desiredRunningState = true
         await startCaptureGraph()
     }
 
     func stop() {
         desiredRunningState = false
-        configurationRestartTask?.cancel()
-        configurationRestartTask = nil
-        configurationStabilityTask?.cancel()
-        configurationStabilityTask = nil
-        configurationRestartAttempts = 0
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        isReconnecting = false
         stopCaptureGraph(updateStatus: true)
     }
 
-    /// Restart the capture graph. Used when the user switches input devices
-    /// or the device list changes. No-op when the graph isn't running.
-    private func restartCaptureIfRunning() async {
-        guard desiredRunningState else { return }
-        stopCaptureGraph(updateStatus: false)
-        await startCaptureGraph()
+    func toggleProcessing() {
+        isEnabled.toggle()
+    }
+
+    func reconnectMicrophone() {
+        Task {
+            await scheduleReconnect(reason: "manual reconnect", delaySeconds: 0)
+        }
+    }
+
+    func t(_ key: LocalizedStrings.Key) -> String {
+        LocalizedStrings.text(key, language: appLanguage)
+    }
+
+    func t(_ key: LocalizedStrings.Key, _ values: CVarArg...) -> String {
+        LocalizedStrings.text(key, language: appLanguage, arguments: values)
+    }
+
+    func refreshLaunchAtLoginStatus() {
+        isSyncingLaunchAtLogin = true
+        launchAtLogin = Self.isLaunchAtLoginEnabled()
+        isSyncingLaunchAtLogin = false
     }
 
     private func startCaptureGraph() async {
 
         logger.notice("startCaptureGraph called")
         status = .starting
-        refreshDeviceList()
 
         do {
-            // Resolve the persisted UID to a live device ID. If the device
-            // went away, fall through to the system default rather than
-            // failing the start.
-            let deviceID = selectedInputUID.flatMap(AudioDeviceEnumerator.deviceID(forUID:))
-
-            try await capture.start(deviceID: deviceID)
-
-            startMeterPolling()
-            configurationRestartTask?.cancel()
-            configurationRestartTask = nil
+            try await beginCaptureGraph()
+            reconnectTask?.cancel()
+            reconnectTask = nil
             status = .running
-            scheduleConfigurationRestartBudgetReset()
         } catch {
 
             desiredRunningState = false
@@ -205,48 +298,164 @@ final class AudioViewModel: ObservableObject {
 
     private func handleCaptureConfigurationChange() async {
         guard desiredRunningState else { return }
-        guard configurationRestartTask == nil else { return }
+        await scheduleReconnect(reason: "audio device configuration changed")
+    }
 
-        configurationStabilityTask?.cancel()
-        configurationStabilityTask = nil
-        configurationRestartAttempts += 1
-        guard configurationRestartAttempts <= Self.maxConfigurationRestartAttempts else {
-            logger.error("Capture graph exceeded configuration restart budget")
-            desiredRunningState = false
+    private func scheduleReconnect(reason: String, delaySeconds: Double = 1.5) async {
+        guard desiredRunningState else { return }
+        guard !isReconnecting else {
+            logger.notice("Reconnect already in progress; coalescing event: \(reason, privacy: .public)")
+            return
+        }
+        reconnectTask?.cancel()
+        let delayNanos = UInt64(max(0, delaySeconds) * 1_000_000_000)
+        logger.notice("Scheduling audio reconnect after \(delaySeconds, privacy: .public)s: \(reason, privacy: .public)")
+        status = .starting
+        reconnectTask = Task { [weak self] in
+            if delayNanos > 0 {
+                try? await Task.sleep(nanoseconds: delayNanos)
+            }
+            guard !Task.isCancelled else { return }
+            await self?.performReconnect(reason: reason)
+        }
+    }
+
+    private func performReconnect(reason: String) async {
+        guard desiredRunningState, !isReconnecting else { return }
+        isReconnecting = true
+        defer {
+            isReconnecting = false
+            reconnectTask = nil
+        }
+
+        logger.notice("Reconnecting audio engine: \(reason, privacy: .public)")
+        status = .starting
+
+        var lastError: Error?
+        for attempt in 0...Self.reconnectBackoffSeconds.count {
             stopCaptureGraph(updateStatus: false)
-            status = .failed("Audio device kept reconfiguring. Reopen the app or reselect the microphone.")
+            do {
+                try await beginCaptureGraph()
+                status = .running
+                logger.notice("Audio reconnect succeeded")
+                return
+            } catch {
+                lastError = error
+                logger.error("Audio reconnect attempt \(attempt + 1, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                if attempt < Self.reconnectBackoffSeconds.count {
+                    try? await Task.sleep(nanoseconds: Self.reconnectBackoffSeconds[attempt])
+                    if Task.isCancelled { return }
+                }
+            }
+        }
+
+        let message = lastError?.localizedDescription ?? "Unknown audio restart failure."
+        status = .failed("Could not reconnect microphone automatically. Use Restart Audio Engine from the menu. \(message)")
+    }
+
+    private func beginCaptureGraph() async throws {
+        refreshDeviceList()
+
+        let deviceID: AudioDeviceID?
+        if let selectedInputUID, let liveDeviceID = AudioDeviceEnumerator.deviceID(forUID: selectedInputUID) {
+            deviceID = liveDeviceID
+            logger.notice("Starting capture with selected input UID: \(selectedInputUID, privacy: .public)")
+        } else if selectedInputUID != nil {
+            deviceID = inputDevices.first?.deviceID
+            logger.warning("Persisted input device is unavailable; temporarily falling back to first input device")
+        } else {
+            deviceID = nil
+            logger.notice("Starting capture with system default input")
+        }
+
+        try await capture.start(deviceID: deviceID)
+        startMeterPolling()
+    }
+
+    private func applySelectedPreset() {
+        if selectedPreset == .custom {
+            guard !isPromotingManualTuningToCustom else { return }
+            isApplyingPresetSelection = true
+            compThresholdDb = Self.loadFloat(
+                forKey: Self.customCompThresholdDefaultsKey,
+                defaultValue: compThresholdDb
+            )
+            deesserThresholdDb = Self.loadFloat(
+                forKey: Self.customDeesserThresholdDefaultsKey,
+                defaultValue: deesserThresholdDb
+            )
+            isApplyingPresetSelection = false
             return
         }
 
-        logger.notice("Restarting capture after engine configuration change (attempt \(self.configurationRestartAttempts, privacy: .public))")
-        status = .starting
-        configurationRestartTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            await self?.restartAfterConfigurationChange()
+        isApplyingPresetSelection = true
+        bridge.setPreset(selectedPreset)
+        compThresholdDb = selectedPreset.defaultCompThresholdDb
+        deesserThresholdDb = selectedPreset.defaultDeesserThresholdDb
+        isApplyingPresetSelection = false
+    }
+
+    private func persistManualTuningIfNeeded() {
+        guard !isApplyingPresetSelection else { return }
+
+        if selectedPreset != .custom {
+            isPromotingManualTuningToCustom = true
+            selectedPreset = .custom
+            isPromotingManualTuningToCustom = false
         }
+
+        UserDefaults.standard.set(compThresholdDb, forKey: Self.customCompThresholdDefaultsKey)
+        UserDefaults.standard.set(deesserThresholdDb, forKey: Self.customDeesserThresholdDefaultsKey)
     }
 
-    private func restartAfterConfigurationChange() async {
-        defer { configurationRestartTask = nil }
-        guard desiredRunningState else { return }
-        stopCaptureGraph(updateStatus: false)
-        await startCaptureGraph()
+    private static func loadSelectedInputUID() -> String? {
+        UserDefaults.standard.string(forKey: inputUIDDefaultsKey)
     }
 
-    private func scheduleConfigurationRestartBudgetReset() {
-        configurationStabilityTask?.cancel()
-        configurationStabilityTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            await MainActor.run {
-                self?.resetConfigurationRestartBudget()
+    private static func loadPreset() -> Preset {
+        let raw = UserDefaults.standard.integer(forKey: presetDefaultsKey)
+        return Preset(rawValue: raw) ?? .natural
+    }
+
+    private static func loadFloat(forKey key: String, defaultValue: Float) -> Float {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return defaultValue }
+        return UserDefaults.standard.float(forKey: key)
+    }
+
+    private static func loadBool(forKey key: String, defaultValue: Bool) -> Bool {
+        guard UserDefaults.standard.object(forKey: key) != nil else { return defaultValue }
+        return UserDefaults.standard.bool(forKey: key)
+    }
+
+    private static func loadAppLanguage() -> AppLanguage {
+        guard let raw = UserDefaults.standard.string(forKey: appLanguageDefaultsKey) else {
+            return .preferred()
+        }
+        return AppLanguage(rawValue: raw) ?? .preferred()
+    }
+
+    private static func updateDockBadge(for status: Status) {
+        NSApp.dockTile.badgeLabel = status.isError ? "!" : nil
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
             }
+            launchAtLoginError = nil
+            refreshLaunchAtLoginStatus()
+        } catch {
+            launchAtLoginError = error.localizedDescription
+            logger.error("Failed to update launch-at-login: \(error.localizedDescription, privacy: .public)")
+            refreshLaunchAtLoginStatus()
         }
     }
 
-    private func resetConfigurationRestartBudget() {
-        guard desiredRunningState, status == .running else { return }
-        configurationRestartAttempts = 0
-        configurationStabilityTask = nil
+    private static func isLaunchAtLoginEnabled() -> Bool {
+        SMAppService.mainApp.status == .enabled
     }
 
     // MARK: - Voice Preview
@@ -373,12 +582,16 @@ final class AudioViewModel: ObservableObject {
         case running
         case failed(String)
 
-        var displayText: String {
+        func displayText(language: AppLanguage) -> String {
             switch self {
-            case .idle:            return "Idle"
-            case .starting:        return "Starting…"
-            case .running:         return "Running"
-            case .failed(let msg): return "Error: \(msg)"
+            case .idle:
+                return LocalizedStrings.text(.idle, language: language)
+            case .starting:
+                return LocalizedStrings.text(.starting, language: language)
+            case .running:
+                return LocalizedStrings.text(.running, language: language)
+            case .failed(let msg):
+                return LocalizedStrings.text(.errorPrefix, language: language, msg)
             }
         }
 

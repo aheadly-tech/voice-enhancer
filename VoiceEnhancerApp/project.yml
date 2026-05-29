@@ -48,6 +48,7 @@ targets:
     info:
       path: Sources/Resources/Info.plist
       properties:
+        LSUIElement: true
         NSMicrophoneUsageDescription: "Voice Enhancer needs microphone access to capture and process your audio in real time."
 
     entitlements:

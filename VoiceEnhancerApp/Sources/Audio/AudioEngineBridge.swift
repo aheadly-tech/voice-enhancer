@@ -52,6 +52,7 @@ final class AudioEngineBridge {
 
     func setPreset(_ preset: Preset) {
         guard let h = handle else { return }
+        guard preset.isFactoryPreset else { return }
         _ = ve_engine_set_preset(h, ve_preset_t(rawValue: UInt32(preset.rawValue)))
     }
 

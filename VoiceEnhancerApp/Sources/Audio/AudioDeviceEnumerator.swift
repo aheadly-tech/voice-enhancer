@@ -26,6 +26,8 @@ enum AudioDeviceEnumerator {
                   let name = stringProperty(id: id, selector: kAudioDevicePropertyDeviceNameCFString)
             else { return nil }
 
+            guard name != virtualDriverName else { return nil }
+
             return AudioDevice(deviceID: id, uid: uid, name: name, hasInput: true)
         }
     }
@@ -57,7 +59,12 @@ enum AudioDeviceEnumerator {
     /// to the HAL. This is a better user-facing "driver installed" signal
     /// than shared-memory availability.
     static func hasVoiceEnhancerDriver() -> Bool {
-        listInputDevices().contains { $0.name == virtualDriverName }
+        allDeviceIDs().contains { id in
+            guard hasInputStreams(deviceID: id),
+                  let name = stringProperty(id: id, selector: kAudioDevicePropertyDeviceNameCFString)
+            else { return false }
+            return name == virtualDriverName
+        }
     }
 
     // MARK: - Private helpers
