@@ -23,7 +23,13 @@ let package = Package(
         .executableTarget(
             name: "VoiceEnhancer",
             path: "Sources",
-            exclude: ["Resources/Info.plist"],
+            exclude: [
+                "Resources/Info.plist",
+                "Resources/AppIcon.png",
+                "Resources/VoiceEnhancer.entitlements",
+                "Audio/AVAudioTapInstaller.h",
+                "Audio/AVAudioTapInstaller.m"
+            ],
             resources: [
                 .process("Resources/Assets.xcassets")
             ]

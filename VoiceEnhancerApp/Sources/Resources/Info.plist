@@ -18,6 +18,8 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice Enhancer needs microphone access to capture and process your audio in real time.</string>
 </dict>

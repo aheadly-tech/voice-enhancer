@@ -18,26 +18,26 @@ struct MetersView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Levels")
+            SectionHeader(title: audio.t(.levels))
 
             VStack(spacing: 8) {
                 MeterRow(
-                    label: "Input",
+                    label: audio.t(.input),
                     value: audio.inputPeak,
                     style: .peak
                 )
                 MeterRow(
-                    label: "Output",
+                    label: audio.t(.output),
                     value: audio.outputPeak,
                     style: .peak
                 )
                 MeterRow(
-                    label: "Comp",
+                    label: audio.t(.comp),
                     value: audio.compressorGrDb,
                     style: .gainReduction
                 )
                 MeterRow(
-                    label: "De-ess",
+                    label: audio.t(.deess),
                     value: audio.deesserGrDb,
                     style: .gainReduction
                 )
@@ -145,9 +145,11 @@ private struct MeterRow: View {
     }
 }
 
+#if DEBUG
 #Preview {
     MetersView()
         .environmentObject(AudioViewModel())
         .padding()
         .frame(width: 520)
 }
+#endif

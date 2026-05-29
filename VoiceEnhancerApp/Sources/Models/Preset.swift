@@ -2,8 +2,11 @@ import Foundation
 
 /// Voice-processing preset — the user's main choice in the UI.
 ///
-/// Values here must stay in sync with `ve_preset_t` in the C ABI header and
-/// with `PresetId` in the C++ engine. When adding a preset:
+/// Factory preset raw values must stay in sync with `ve_preset_t` in the C
+/// ABI header and with `PresetId` in the C++ engine. `custom` is Swift-only:
+/// it preserves user slider choices on top of the current engine tuning.
+///
+/// When adding a factory preset:
 ///   1. Add the case in C++ (``AudioEngine/include/voice_enhancer/Preset.h``)
 ///   2. Add it to ``ve_preset_t`` in the C ABI
 ///   3. Add it here
@@ -13,27 +16,42 @@ enum Preset: Int, CaseIterable, Identifiable {
     case broadcast = 1
     case clarity   = 2
     case warm      = 3
+    case custom    = 4
 
     var id: Int { rawValue }
 
+    var isFactoryPreset: Bool {
+        self != .custom
+    }
+
     /// Short display name shown on the preset card.
     var name: String {
+        name(language: .english)
+    }
+
+    func name(language: AppLanguage) -> String {
         switch self {
-        case .natural:   return "Natural"
-        case .broadcast: return "Broadcast"
-        case .clarity:   return "Clarity"
-        case .warm:      return "Warm"
+        case .natural:   return LocalizedStrings.text(.naturalName, language: language)
+        case .broadcast: return LocalizedStrings.text(.broadcastName, language: language)
+        case .clarity:   return LocalizedStrings.text(.clarityName, language: language)
+        case .warm:      return LocalizedStrings.text(.warmName, language: language)
+        case .custom:    return LocalizedStrings.text(.customName, language: language)
         }
     }
 
     /// One-line description of what the preset does. Kept deliberately short
     /// so it fits comfortably under the name on a preset card.
     var blurb: String {
+        blurb(language: .english)
+    }
+
+    func blurb(language: AppLanguage) -> String {
         switch self {
-        case .natural:   return "Gentle cleanup. Most transparent."
-        case .broadcast: return "Radio DJ voice. Bold and clear."
-        case .clarity:   return "Cuts through. Great for quiet mics."
-        case .warm:      return "Softens harsh mics. Adds body."
+        case .natural:   return LocalizedStrings.text(.naturalBlurb, language: language)
+        case .broadcast: return LocalizedStrings.text(.broadcastBlurb, language: language)
+        case .clarity:   return LocalizedStrings.text(.clarityBlurb, language: language)
+        case .warm:      return LocalizedStrings.text(.warmBlurb, language: language)
+        case .custom:    return LocalizedStrings.text(.customBlurb, language: language)
         }
     }
 
@@ -44,6 +62,7 @@ enum Preset: Int, CaseIterable, Identifiable {
         case .broadcast: return "dot.radiowaves.left.and.right"
         case .clarity:   return "sparkles"
         case .warm:      return "flame"
+        case .custom:    return "slider.horizontal.3"
         }
     }
 
@@ -54,6 +73,7 @@ enum Preset: Int, CaseIterable, Identifiable {
         case .broadcast: return -22
         case .clarity:   return -20
         case .warm:      return -18
+        case .custom:    return -18
         }
     }
 
@@ -64,6 +84,7 @@ enum Preset: Int, CaseIterable, Identifiable {
         case .broadcast: return -26
         case .clarity:   return -24
         case .warm:      return -26
+        case .custom:    return -24
         }
     }
 }
