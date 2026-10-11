@@ -3,6 +3,9 @@ import AVFoundation
 import CoreAudio
 import AudioToolbox
 import os
+#if canImport(VoiceEnhancerTapSupport)
+import VoiceEnhancerTapSupport
+#endif
 
 /// Microphone capture + routing using `AVAudioEngine`.
 ///
@@ -21,10 +24,10 @@ import os
 ///     apps treat microphones anyway.
 ///   * Buffer size is 512 frames at 48 kHz (~10.7 ms). Good balance of
 ///     latency vs. CPU efficiency.
-///   * Format conversion is handled by AVAudioEngine itself — we install
-///     the tap with the ring's target format (48 kHz mono float32) and the
-///     engine inserts an RT-safe converter in its audio graph when the
-///     input device's native format differs.
+///   * The tap retains the ring's fixed format (48 kHz mono float32).
+///     AVAudioEngine can reject incompatible input formats; the native
+///     helper turns tap exceptions into recoverable setup errors.
+///     Native-format capture and conversion require a separate change.
 final class MicCapture {
     /// AVAudioEngine can hand us much larger blocks than the requested tap
     /// buffer size during route changes and on some built-in devices. Keep
@@ -34,7 +37,7 @@ final class MicCapture {
     private let logger = Logger(subsystem: "tech.aheadly.voice-enhancer", category: "MicCapture")
     private let engineBridge: AudioEngineBridge
     private let ringBridge: RingBufferBridge
-    private let avEngine = AVAudioEngine()
+    private var avEngine = AVAudioEngine()
     var engineConfigurationChangeHandler: (() -> Void)?
 
     /// Optional tap that receives raw pre-DSP audio (48 kHz mono float32).
@@ -43,8 +46,8 @@ final class MicCapture {
     var rawAudioTap: ((UnsafePointer<Float>, Int) -> Void)?
 
     /// The target format the ring expects. Fixed: 48 kHz, mono, float32.
-    /// The tap is installed with this format so AVAudioEngine handles any
-    /// sample rate or channel conversion in its internal graph (RT-safe).
+    /// The tap requests this format; incompatible input formats may be
+    /// rejected with a recoverable tap installation error.
     private let ringFormat: AVAudioFormat = {
         AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -59,13 +62,19 @@ final class MicCapture {
     /// even when the tap requests 512, and route changes can briefly grow that.
     private var processingBuffer = [Float](repeating: 0, count: MicCapture.maxProcessingFrames)
 
-    private var tapInstalled = false
+    // An installation can throw after mutating the node, so cleanup must
+    // attempt removal even when installation did not return successfully.
+    private var tapMayBeInstalled = false
     private var engineConfigurationObserver: NSObjectProtocol?
     private var hasLoggedFirstInputBuffer = false
 
     init(engineBridge: AudioEngineBridge, ringBridge: RingBufferBridge) {
         self.engineBridge = engineBridge
         self.ringBridge = ringBridge
+        observeEngineConfiguration()
+    }
+
+    private func observeEngineConfiguration() {
         self.engineConfigurationObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange,
             object: avEngine,
@@ -109,27 +118,55 @@ final class MicCapture {
         // Mark a new writer session so the driver resyncs its read head.
         ringBridge.bumpGeneration()
 
-        // Install a tap with the ring's target format. When the input
-        // device's native format differs (e.g. 44.1 kHz stereo USB mic),
-        // AVAudioEngine inserts an internal format converter that runs
-        // inside its managed audio graph — RT-safe, no allocations in our
-        // callback. The callback always receives 48 kHz mono float32.
+        // Retain the fixed 48 kHz mono float32 tap. AVAudioEngine may reject
+        // incompatible formats (e.g. a 44.1 kHz USB mic); the native helper
+        // returns a recoverable error instead of letting the exception abort
+        // the app. Native-format capture and conversion are separate work.
         let input = avEngine.inputNode
-        input.installTap(onBus: 0, bufferSize: 512, format: ringFormat) { [weak self] buffer, _ in
+        let block: AVAudioNodeTapBlock = { [weak self] buffer, _ in
             self?.handleInputBuffer(buffer)
         }
-        tapInstalled = true
-
-        try avEngine.start()
+        tapMayBeInstalled = true
+        do {
+            if let error = VEInstallInputTapSafely(input, 0, 512, ringFormat, block) {
+                throw MicCaptureError.tapInstallationFailed(error.localizedDescription)
+            }
+            try avEngine.start()
+        } catch {
+            // Preserve the original setup error, even if removal also fails.
+            // A fresh graph prevents partially installed or duplicate taps
+            // from leaking into a later start.
+            stopCaptureGraph(discardGraph: true)
+            throw error
+        }
     }
 
     func stop() {
-        if tapInstalled {
-            avEngine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
+        stopCaptureGraph()
+    }
+
+    private func stopCaptureGraph(discardGraph: Bool = false) {
+        var removalFailed = false
+        if tapMayBeInstalled {
+            if let error = VERemoveInputTapSafely(avEngine.inputNode, 0) {
+                logger.warning("Audio tap removal failed: \(error.localizedDescription, privacy: .public)")
+                removalFailed = true
+            }
+            tapMayBeInstalled = false
         }
         avEngine.stop()
         hasLoggedFirstInputBuffer = false
+        if removalFailed || discardGraph {
+            discardCaptureGraph()
+        }
+    }
+
+    private func discardCaptureGraph() {
+        if let engineConfigurationObserver {
+            NotificationCenter.default.removeObserver(engineConfigurationObserver)
+        }
+        avEngine = AVAudioEngine()
+        observeEngineConfiguration()
     }
 
     // MARK: - Processing
@@ -226,6 +263,7 @@ final class MicCapture {
 enum MicCaptureError: LocalizedError {
     case microphonePermissionDenied
     case deviceBindingFailed(code: Int)
+    case tapInstallationFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -233,6 +271,8 @@ enum MicCaptureError: LocalizedError {
             return "Microphone permission was not granted. Enable it in System Settings → Privacy & Security → Microphone."
         case .deviceBindingFailed(let code):
             return "Could not bind to the selected input device (code \(code))."
+        case .tapInstallationFailed(let message):
+            return "Could not install the microphone tap: \(message)"
         }
     }
 }

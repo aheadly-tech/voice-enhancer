@@ -20,16 +20,33 @@ let package = Package(
         .executable(name: "VoiceEnhancer", targets: ["VoiceEnhancer"])
     ],
     targets: [
+        .target(
+            name: "VoiceEnhancerTapSupport",
+            path: "Sources/Audio/TapSupport",
+            publicHeadersPath: "include",
+            cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])],
+            linkerSettings: [.linkedFramework("AVFoundation")]
+        ),
         .executableTarget(
             name: "VoiceEnhancer",
+            dependencies: ["VoiceEnhancerTapSupport"],
             path: "Sources",
-            exclude: ["Resources/Info.plist"],
+            exclude: ["Resources/Info.plist", "Audio/TapSupport"],
             resources: [
                 .process("Resources/Assets.xcassets")
             ]
             // NOTE: When building inside Xcode, the AudioEngine static library
             // is linked via an Xcode build setting. For swift build we stub
             // the engine — see Audio/AudioEngineBridge.swift.
+        ),
+        // A microphone-free native regression runner. It exercises the
+        // exact Objective-C helper linked into both app build paths.
+        .executableTarget(
+            name: "TapSupportTests",
+            dependencies: ["VoiceEnhancerTapSupport"],
+            path: "Tests/TapSupportTests",
+            cSettings: [.unsafeFlags(["-fobjc-arc", "-fobjc-arc-exceptions"])],
+            linkerSettings: [.linkedFramework("AVFoundation")]
         )
     ]
 )

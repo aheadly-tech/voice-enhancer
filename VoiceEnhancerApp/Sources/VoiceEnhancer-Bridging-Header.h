@@ -11,5 +11,6 @@
 #define VoiceEnhancer_Bridging_Header_h
 
 #include "engine_c_api.h"
+#import "Audio/TapSupport/include/AVAudioTapInstaller.h"
 
 #endif /* VoiceEnhancer_Bridging_Header_h */

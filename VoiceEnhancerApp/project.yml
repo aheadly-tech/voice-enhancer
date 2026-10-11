@@ -44,6 +44,9 @@ targets:
           - "Resources/VoiceEnhancer.entitlements"
           # The bridging header is wired via build setting, not as a source.
           - "VoiceEnhancer-Bridging-Header.h"
+          - "Audio/TapSupport"
+      - path: Sources/Audio/TapSupport/AVAudioTapInstaller.m
+        compilerFlags: "-fobjc-arc -fobjc-arc-exceptions"
 
     info:
       path: Sources/Resources/Info.plist

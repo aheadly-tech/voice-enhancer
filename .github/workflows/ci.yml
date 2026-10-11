@@ -5,7 +5,7 @@ name: CI
 #                       platform-agnostic and builds on Linux in seconds.
 #                       Runs the unit tests. Covers 80% of the risk.
 #   * driver-macos    — macOS-only. Builds the HAL driver bundle and the
-#                       SwiftUI app. Slower (Xcode), gated so that Linux
+#                       linked SwiftUI app. Slower (Xcode), gated so that Linux
 #                       failures short-circuit before we burn macOS minutes.
 #
 # We intentionally don't run the SwiftUI UI tests here — there's no good
@@ -49,14 +49,14 @@ jobs:
 
   driver-macos:
     name: Driver + App (macOS)
-    runs-on: macos-14
+    runs-on: macos-15
     needs: engine-linux
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
         # Pin to a known-good Xcode to avoid drift when the runner image rolls.
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
       - name: Show toolchain versions
         run: |
@@ -89,9 +89,43 @@ jobs:
       - name: Build Swift app (package compile-check)
         working-directory: VoiceEnhancerApp
         # This builds with the stub engine path (no C++ engine linked).
-        # Its job is to keep the SwiftUI code honest — full .app bundle
-        # builds happen in an Xcode project that isn't checked in yet.
+        # The shipping app and C/Objective-C bridge are checked separately.
         run: swift build -c release
+
+      # The runner uses a fake node and does not request microphone access.
+      - name: Run audio tap regression checks
+        working-directory: VoiceEnhancerApp
+        run: swift run -c release TapSupportTests
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: VoiceEnhancerApp
+        run: xcodegen generate --quiet
+
+      - name: Build linked app without signing
+        # Use the runner architecture to match the engine built above. The
+        # project's arm64 default is for local Apple Silicon app builds.
+        run: |
+          xcodebuild \
+            -project VoiceEnhancerApp/VoiceEnhancer.xcodeproj \
+            -scheme VoiceEnhancer \
+            -configuration Release \
+            -derivedDataPath VoiceEnhancerApp/build \
+            ARCHS="$(uname -m)" VALID_ARCHS="$(uname -m)" \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Verify linked app bundle
+        run: |
+          test -f "VoiceEnhancerApp/build/Build/Products/Release/Voice Enhancer.app/Contents/MacOS/Voice Enhancer"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceEnhancer.app
+          path: VoiceEnhancerApp/build/Build/Products/Release/Voice Enhancer.app
+          if-no-files-found: error
 
       - name: Upload driver artifact
         uses: actions/upload-artifact@v4
